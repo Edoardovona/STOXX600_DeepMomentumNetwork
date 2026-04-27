@@ -1,0 +1,35 @@
+# Data paths
+data:
+  raw_csv_dir: data/raw/stoxx600  # prices_YYYY.csv live here
+  raw_excel: data/raw/stoxx600/2025_2026_PRICE_ATLAS_data_sxxr_static.xlsx
+  universe_dir: data/universe/stoxx600  # universe_by_year.json + all_sxxp_stocks.csv
+  processed_dir: data/processed/stoxx600
+  stocks_csv: data/processed/stoxx600/stoxx600_processed.csv
+  benchmarks_csv: data/processed/stoxx600/benchmark_stoxx600_ew.csv
+
+# Universe
+assets: []
+
+# Changepoint detection (used in week 2)
+lbw: 21
+
+# Data range 
+start_year: 2006
+end_year: 2026
+csv_last_year: 2024       # CSVs cover up to this year; xlsx takes over after
+
+# Return horizons (per-ticker rolling windows)
+# Each entry: [lag_in_days, label]. Used for log and arithmetic returns.
+return_horizons:
+  - [1, "1d"]
+  - [21, "21d"]
+  - [252, "252d"]
+
+# Realised volatility windows (annualised, from 1d log returns) --> 1d is deliberately omitted: rolling std with window=1 is undefined.
+vol_windows:
+  - [21, "21d"]
+  - [252, "252d"]
+
+# Portfolio / signal
+vol_target: 0.15
+ewm_span: 60
