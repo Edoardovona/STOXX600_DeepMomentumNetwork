@@ -1,17 +1,15 @@
 # Data paths
 data:
-  raw_csv_dir: data/raw/stoxx600  # prices_YYYY.csv live here
-  raw_excel: data/raw/stoxx600/2025_2026_PRICE_ATLAS_data_sxxr_static.xlsx
-  universe_dir: data/universe/stoxx600  # universe_by_year.json + all_sxxp_stocks.csv
+  #raw_csv_dir: data/raw/stoxx600  # prices_YYYY.csv live here
+  #raw_excel: data/raw/stoxx600/2025_2026_PRICE_ATLAS_data_sxxr_static.xlsx
+  #universe_dir: data/universe/stoxx600  # universe_by_year.json + all_sxxp_stocks.csv
   processed_dir: data/processed/stoxx600
-  stocks_csv: data/processed/stoxx600/stoxx600_processed.csv
-  benchmarks_csv: data/processed/stoxx600/benchmark_stoxx600_ew.csv
+  #stocks_csv: data/processed/stoxx600/stoxx600_processed.csv
+  #benchmarks_csv: data/processed/stoxx600/benchmark_stoxx600_ew.csv
+  raw_bloomberg: data/raw/stoxx600/SXXR.xlsx
 
 # Universe
 assets: []
-
-# Changepoint detection (used in week 2)
-lbw: 21
 
 # Data range 
 start_year: 2006
@@ -23,27 +21,66 @@ csv_last_year: 2024       # CSVs cover up to this year; xlsx takes over after
 return_horizons:
   - [1, "1d"]
   - [21, "21d"]
+  - [63, "63d"]
+  - [126, "126d"]
   - [252, "252d"]
 
 # Realised volatility windows (annualized, from 1d arithmetic returns) --> 1d is deliberately omitted: rolling std with window=1 is undefined.
 vol_windows:
   - [21, "21d"]
+  - [63, "63d"]
+  - [126, "126d"]
   - [252, "252d"]
 
 # Portfolio / signal
-vol_target: 0.15
-ewm_span: 60
+vol_target: 0.15   # paper Eq. 11; reused as DMN target_vol
+
 
 # CPD lookback windows (in days)
-cpd_lookbacks:
-  - 10
-  - 21
-  - 63
-  - 126
-  - 252
+#cpd_lookbacks:
+#  - 10
+#  - 21
+#  - 63
+#  - 126
+#  - 252
 
 # MACD pairs (Short span, Long span)
 macd_pairs:
   - [8, 24]
-  - [16, 28]
+  - [16, 48] # there was a typo in the paper, corrected according to Lim, Zohren, and Roberts (2019)
   - [32, 96]
+
+
+# Deep Momentum Network
+dmn:
+  cpd_lbw:    21       # CPD lookback window (paper sweeps {10, 21, 63, 126, 252})
+  seq_len:    63       # LSTM sequence length (paper Appendix B)
+  hidden:     20       # LSTM hidden state size
+  dropout:    0.3
+  batch:      128      # batch size; reduce to 64 for single-ticker test mode
+  lr:         0.001
+  epochs:     100      # max epochs; paper uses 300
+  patience:   25       # early-stopping patience (n. of epochs) on val Sharpe
+
+# Walk-forward validation
+fold_type: expanding   # "expanding" or "rolling"
+
+folds_expanding:
+  - {train_start: "2006-01-01", train_end: "2010-12-31",
+     test_start:  "2011-01-01", test_end:  "2015-12-31"}
+  - {train_start: "2006-01-01", train_end: "2015-12-31",
+     test_start:  "2016-01-01", test_end:  "2020-12-31"}
+  - {train_start: "2006-01-01", train_end: "2020-12-31",
+     test_start:  "2021-01-01", test_end:  "2023-12-31"}
+  - {train_start: "2006-01-01", train_end: "2023-12-31",
+     test_start:  "2024-01-01", test_end:  "2026-05-06"}
+
+folds_rolling: # 10 year rolling window
+  - {train_start: "2006-01-01", train_end: "2015-12-31",
+     test_start:  "2016-01-01", test_end:  "2018-12-31"}
+  - {train_start: "2009-01-01", train_end: "2018-12-31",
+     test_start:  "2019-01-01", test_end:  "2021-12-31"}
+  - {train_start: "2012-01-01", train_end: "2021-12-31",
+     test_start:  "2022-01-01", test_end:  "2024-12-31"}
+  - {train_start: "2014-01-01", train_end: "2023-12-31",
+     test_start:  "2024-01-01", test_end:  "2026-05-06"}
