@@ -75,19 +75,21 @@ def train_dmn(
     
     fold_type = cfg.get("fold_type", "expanding")
     fold = cfg[f"folds_{fold_type}"][fold_idx]
-    cpd_lbw     = cfg["cpd_lbw"]
-    seq_len     = cfg["seq_len"]
-    hidden      = cfg["hidden"]
-    dropout     = cfg["dropout"]
-    batch       = cfg["batch"]
-    lr          = cfg["lr"]
-    epochs      = cfg["epochs"]
-    patience    = cfg["patience"]
-    target_vol  = cfg["target_vol"]
+
+    dmn_cfg = cfg["dmn"]
+    cpd_lbw     = dmn_cfg["cpd_lbw"]
+    seq_len     = dmn_cfg["seq_len"]
+    hidden      = dmn_cfg["hidden"]
+    dropout     = dmn_cfg["dropout"]
+    batch       = dmn_cfg["batch"]
+    lr          = dmn_cfg["lr"]
+    epochs      = dmn_cfg["epochs"]
+    patience    = dmn_cfg["patience"]
+
+    target_vol  = cfg["vol_target"]
     
     processed_dir = PROJECT_ROOT / cfg["data"]["processed_dir"]
     
-    # Load data
     feature_cols = [
         "1d_norm_ret", "21d_norm_ret", "63d_norm_ret", "126d_norm_ret", "252d_norm_ret",
         "macd_8_24", "macd_16_48", "macd_32_96",
@@ -98,13 +100,17 @@ def train_dmn(
     stocks = pd.read_csv(processed_dir / "stoxx600_processed.csv",
                          parse_dates=["date"], usecols=keep_cols)
     
+    
+    processed_cpd = PROJECT_ROOT / cfg["data"]["processed_cpd"]
+    
     if use_cpd:
-        cpd_path = processed_dir / f"cpd_features_lbw{cpd_lbw}.parquet"
+
+        cpd_path = processed_cpd /  f"cpd_features_lbw{cpd_lbw}_s5.csv"
+        
         if not cpd_path.exists():
-            cpd_path = processed_dir / f"cpd_features_lbw{cpd_lbw}.csv"
-            cpd = pd.read_csv(cpd_path, parse_dates=["date"])
-        else:
-            cpd = pd.read_parquet(cpd_path)
+            raise FileNotFoundError(f"Error: CSV file does not exist in {cpd_path}")
+        
+        cpd = pd.read_csv(cpd_path, parse_dates=["date"])
         stocks = stocks.merge(cpd, on=["date", "ticker"], how="left")
         cpd_cols = [f"cpd_nu_{cpd_lbw}", f"cpd_gamma_{cpd_lbw}"]
         stocks[cpd_cols] = stocks.groupby("ticker")[cpd_cols].ffill()
@@ -226,8 +232,8 @@ def train_dmn(
     })
     
     # Save
-    ckpt_dir = processed_dir / "models"
-    ckpt_dir.mkdir(exist_ok=True)
+    ckpt_dir = PROJECT_ROOT / cfg["data"]["processed_mod"]
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
     suffix = f"cpd{cpd_lbw}" if use_cpd else "nocpd"
     
     ckpt = {

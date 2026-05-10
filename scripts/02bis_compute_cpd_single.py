@@ -111,7 +111,9 @@ def main() -> None:
     })
 
     safe_ticker = args.ticker.replace(" ", "_").replace("/", "_")
-    out_path = processed_dir / f"cpd_features_lbw{args.lbw}_SINGLE_{safe_ticker}.csv"
+    cpd_dir = processed_dir / "cpd"
+    cpd_dir.mkdir(exist_ok=True)
+    out_path = cpd_dir / f"cpd_features_lbw{args.lbw}_s{args.stride}_SINGLE_{safe_ticker}.csv"
     out.to_csv(out_path, index=False)
 
     print(f"\nSaved: {out_path}  ({out_path.stat().st_size / 1e3:.1f} KB)")

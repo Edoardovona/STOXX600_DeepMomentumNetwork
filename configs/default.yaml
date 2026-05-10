@@ -1,11 +1,8 @@
 # Data paths
 data:
-  #raw_csv_dir: data/raw/stoxx600  # prices_YYYY.csv live here
-  #raw_excel: data/raw/stoxx600/2025_2026_PRICE_ATLAS_data_sxxr_static.xlsx
-  #universe_dir: data/universe/stoxx600  # universe_by_year.json + all_sxxp_stocks.csv
   processed_dir: data/processed/stoxx600
-  #stocks_csv: data/processed/stoxx600/stoxx600_processed.csv
-  #benchmarks_csv: data/processed/stoxx600/benchmark_stoxx600_ew.csv
+  processed_cpd: data/processed/cpd
+  processed_mod: data/processed/models
   raw_bloomberg: data/raw/stoxx600/SXXR.xlsx
 
 # Universe
@@ -35,14 +32,6 @@ vol_windows:
 # Portfolio / signal
 vol_target: 0.15   # paper Eq. 11; reused as DMN target_vol
 
-
-# CPD lookback windows (in days)
-#cpd_lookbacks:
-#  - 10
-#  - 21
-#  - 63
-#  - 126
-#  - 252
 
 # MACD pairs (Short span, Long span)
 macd_pairs:

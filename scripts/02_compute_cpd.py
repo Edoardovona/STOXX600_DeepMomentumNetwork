@@ -98,7 +98,10 @@ def main() -> None:
     elapsed = time.time() - t0
 
     out = pd.concat(results, ignore_index=True)
-    out_path = processed_dir / f"cpd_features_lbw{args.lbw}.csv"
+    # Create the 'cpd' subfolder if it does not exist
+    cpd_dir = processed_dir / "cpd"
+    cpd_dir.mkdir(exist_ok=True)
+    out_path = cpd_dir / f"cpd_features_lbw{args.lbw}_s{args.stride}.csv"
     out.to_csv(out_path, index=False)
 
 
