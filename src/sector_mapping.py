@@ -325,7 +325,6 @@ SECTOR_MAP: dict[str, str] = {
     "DCC LN":    "Industrials",
     "DUE GY":    "Industrials",
     "EPIA SS":   "Industrials",
-    "FERG LN":   "Industrials",
     "FRA GY":    "Industrials",
     "GEBN SE":   "Industrials",
     "KNIN SE":   "Industrials",
@@ -669,7 +668,6 @@ SECTOR_MAP: dict[str, str] = {
     "BEAN SE":   "Health Care",
     "SDZ SE":    "Health Care",
     "SFSN SE":   "Health Care",
-    "HELN SE":   "Health Care",
     "DOCM SE":   "Health Care",
     "SCHP SE":   "Health Care",
     "AZN LN":    "Health Care",
@@ -696,7 +694,6 @@ SECTOR_MAP: dict[str, str] = {
     "SYENS BB":  "Health Care",
     "UCB BB":    "Health Care",
     "ARGX BB":   "Health Care",
-    "GLPG NA":   "Health Care",
     "ORNBV FH":  "Health Care",
     "ELI BB":    "Health Care",
     "SOBI SS":   "Health Care",
@@ -847,7 +844,6 @@ SECTOR_MAP: dict[str, str] = {
     "EVR LN":    "Financials",
     "III LN":    "Financials",
     "LRE LN":    "Financials",
-    "PHNX LN":   "Financials",
     "UTG LN":    "Financials",
     "QLT LN":    "Financials",
     "OMU LN":    "Financials",
@@ -871,7 +867,6 @@ SECTOR_MAP: dict[str, str] = {
     "SEBA SS":   "Financials",
     "SHBA SS":   "Financials",
     "SWEDA SS":  "Financials",
-    "SYDB DC":   "Financials",
     "DANSKE DC": "Financials",
     "DNB NO":    "Financials",
     "GJF NO":    "Financials",
@@ -903,7 +898,6 @@ SECTOR_MAP: dict[str, str] = {
     "FLTR ID":   "Financials",
     "AZE BB":    "Financials",
     "LOTB BB":   "Financials",
-    "APAM NA":   "Financials",
     "LIGHT NA":  "Financials",
     "ALLFG NA":  "Financials",
     "ARCAD NA":  "Financials",
@@ -956,7 +950,6 @@ SECTOR_MAP: dict[str, str] = {
     "BKIA SQ":   "Financials",
     "BME SQ":    "Financials",
     "BNL IM":    "Financials",
-    "BPI IM":    "Financials",
     "BPVN IM":   "Financials",
     "CNP FP":    "Financials",
     "CSGN SE":   "Financials",
@@ -1019,6 +1012,11 @@ SECTOR_MAP: dict[str, str] = {
     "SEO VX":    "Financials",
     "SHB LN":    "Financials",
     "VEND NO":   "Financials",
+    "TEMP GA":   "Financials",
+    "US IM":     "Financials",
+    "SDLF LN":   "Financials",
+    "ARLN GY":   "Financials",
+
 
     "ASML NA":   "Information Technology",
     "SAP GY":    "Information Technology",
@@ -1138,7 +1136,9 @@ SECTOR_MAP: dict[str, str] = {
     "SWVK GY":   "Information Technology",
     "SYST VX":   "Information Technology",
     "WIN GY":    "Information Technology",
-    "LINU GY":   "Information Technology",
+    "LINU GY":   "Information Technology",   
+    "TAA NO":    "Information Technology",
+    "TCY LN":    "Information Technology",
 
     "VIV FP":    "Communication Services",
     "ORA FP":    "Communication Services",
@@ -1180,7 +1180,6 @@ SECTOR_MAP: dict[str, str] = {
     "VIS SQ":    "Communication Services",
     "ANE SQ":    "Communication Services",
     "ENX FP":    "Communication Services",
-    "IPS FP":    "Communication Services",
     "BOL FP":    "Communication Services",
     "PSM GY":    "Communication Services",
     "UTDI GY":   "Communication Services",
@@ -1253,6 +1252,7 @@ SECTOR_MAP: dict[str, str] = {
     "SSL LN":    "Communication Services",
     "TNS LN":    "Communication Services",
     "WMPY LN":   "Communication Services",
+    "TEM SM":    "Communication Services",
 
     "A2A IM":    "Utilities",
     "ENEL IM":   "Utilities",
@@ -1299,7 +1299,9 @@ SECTOR_MAP: dict[str, str] = {
     "SZE FP":    "Utilities",
     "BES PL":    "Utilities",
     "CEP SQ":    "Utilities",
-    "IBR SQ":    "Utilities",
+    "IBR SQ":    "Utilities",    
+    "BGY LN":    "Utilities",
+    "UNF SQ":    "Utilities",
 
     "CAST SS":   "Real Estate",
     "WIHL SS":   "Real Estate",
@@ -1310,7 +1312,6 @@ SECTOR_MAP: dict[str, str] = {
     "TGM GY":    "Real Estate",
     "DEQ GY":    "Real Estate",
     "ARO GY":    "Real Estate",
-    "KOJAMO FH": "Real Estate",
     "WDP BB":    "Real Estate",
     "COFB BB":   "Real Estate",
     "AED BB":    "Real Estate",
@@ -1328,7 +1329,6 @@ SECTOR_MAP: dict[str, str] = {
     "SCT LN":    "Real Estate",
     "LMP LN":    "Real Estate",
     "GRI LN":    "Real Estate",
-    "PZC LN":    "Real Estate",
     "SHC LN":    "Real Estate",
     "ELM LN":    "Real Estate",
     "DLN LN":    "Real Estate",
@@ -1374,32 +1374,3 @@ SECTOR_MAP: dict[str, str] = {
 def get_sector(ticker: str) -> str:
     """Return the GICS sector for a Bloomberg ticker, or 'Unknown'."""
     return SECTOR_MAP.get(ticker.strip(), "Unknown")
-
-
-# tickers not yet mapped
-#"AUN LN",
-#"BKWN SE",
-#"CLS1 GY",
-#"COB LN",
-#"CPR PL",
-#"FTK GY",
-#"GLB IR",
-#"HBAN SE",
-#"ICLL AV",
-#"IMG LN",
-#"IT IM",
-#"LINU GY",
-#"RTRKS FH",
-#"SGC SM",
-
-# delisted companies, i.e. stocks identified via number + letters are not mapped in this file
-
-# tickers present in the sector mapper but not in the new data file xlsx
-#"APAM NA"   -> "Financials"
-#"FERG LN"   -> "Industrials"
-#"HELN SE"   -> "Health Care"
-#"IPS FP"    -> "Communication Services"
-#"KOJAMO FH" -> "Real Estate"
-#"PHNX LN"   -> "Financials"
-#"PZC LN"    -> "Real Estate"
-#"SYDB DC"   -> "Financials"
