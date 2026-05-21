@@ -43,6 +43,7 @@ macd_pairs:
 # Deep Momentum Network
 dmn:
   cpd_lbw:    21       # CPD lookback window (paper sweeps {10, 21, 63, 126, 252})
+  cpd_stride:  5
   seq_len:    63       # LSTM sequence length (paper Appendix B)
   hidden:     20       # LSTM hidden state size
   dropout:    0.3
@@ -50,6 +51,9 @@ dmn:
   lr:         0.001
   epochs:     100      # max epochs; paper uses 300
   patience:   25       # early-stopping patience (n. of epochs) on val Sharpe
+  seed:        1
+  long_only: false              # true for X_t in (0,1)
+  transaction_cost: 0.0         # 0.0 = no costs; 0.0025 = 25 bps
 
 # Walk-forward validation
 fold_type: expanding   # "expanding" or "rolling"

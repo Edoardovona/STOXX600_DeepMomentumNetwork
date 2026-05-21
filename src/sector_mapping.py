@@ -456,6 +456,7 @@ SECTOR_MAP: dict[str, str] = {
     "SCTN LN":   "Industrials",
     "SRCG SE":   "Industrials",
     "VRD LN":    "Industrials",
+    "TOMK LN":   "Industrials",
 
     "MC FP":     "Consumer Discretionary",
     "CDI FP":    "Consumer Discretionary",
@@ -776,6 +777,8 @@ SECTOR_MAP: dict[str, str] = {
     "GLH LN":    "Health Care",
     "HVM GY":    "Health Care",
     "TEC FP":    "Health Care",
+    "LNA GY":    "Health Care",
+    "AUN LN":    "Health Care",
 
     "ABDN LN":   "Financials",
     "ACA FP":    "Financials",
@@ -1016,9 +1019,10 @@ SECTOR_MAP: dict[str, str] = {
     "US IM":     "Financials",
     "SDLF LN":   "Financials",
     "ARLN GY":   "Financials",
-
+    "63DU GY":   "Financials",
 
     "ASML NA":   "Information Technology",
+    "GTN NA":    "Information Technology",
     "SAP GY":    "Information Technology",
     "CAP FP":    "Information Technology",
     "ATO FP":    "Information Technology",

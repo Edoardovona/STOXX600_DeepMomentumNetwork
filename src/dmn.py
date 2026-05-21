@@ -16,9 +16,12 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-
 class DeepMomentumNetwork(nn.Module):
-    """Single-layer LSTM + tanh head producing positions in (-1, 1).
+    """Single-layer LSTM head producing trading positions.
+
+    The output activation depends on `long_only`:
+        - long_only=False (default, paper):     tanh    → positions in (-1, 1)
+        - long_only=True (long-only framework): sigmoid → positions in  (0, 1)
 
     Inputs
     ------
@@ -26,7 +29,8 @@ class DeepMomentumNetwork(nn.Module):
 
     Outputs
     -------
-    positions : (batch, seq_len) tensor of trading positions in (-1, 1).
+    positions : (batch, seq_len) tensor of trading positions, in (-1, 1) if
+        long_only=False or (0, 1) if long_only=True.
     """
 
     def __init__(
@@ -34,8 +38,10 @@ class DeepMomentumNetwork(nn.Module):
         n_features: int,
         hidden_size: int = 20,
         dropout: float = 0.3,
+        long_only: bool = False,
     ) -> None:
         super().__init__()
+        self.long_only = long_only
         self.lstm = nn.LSTM(
             input_size=n_features,
             hidden_size=hidden_size,
@@ -50,47 +56,43 @@ class DeepMomentumNetwork(nn.Module):
         # h: (batch, seq_len, hidden_size)
         h, _ = self.lstm(x)
         h = self.dropout(h)
-        # Squash to (-1, 1); squeeze the singleton output dim
-        return torch.tanh(self.head(h)).squeeze(-1)
-
+        # Squash to (-1, 1) [paper] or (0, 1) [long-only]; squeeze the singleton output dim
+        out = self.head(h).squeeze(-1)
+        return torch.sigmoid(out) if self.long_only else torch.tanh(out)
 
 def sharpe_loss(
     positions: torch.Tensor,
     returns: torch.Tensor,
     target_vol: float = 0.15,
     ex_ante_vol: torch.Tensor | None = None,
+    transaction_cost: float = 0.0,    # cost per unit change in scaled position
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """Negative annualised Sharpe ratio of the volatility-scaled strategy.
-
-    Implements paper Eq. 14, with the volatility scaling of Eq. 11:
-        R_{t+1} = X_t * (sigma_tgt / sigma_t) * r_{t+1}
-
-    Parameters
-    ----------
-    positions : (batch, seq_len) positions in (-1, 1) -- output of the model.
-    returns   : (batch, seq_len) realized 1d arithmetic returns r_{t+1}
-                aligned so positions[t] is held over returns[t].
-    target_vol : annualised target volatility (default 15% as in paper).
-    ex_ante_vol : (batch, seq_len) ex-ante annualised volatility estimate
-                (e.g. 60d EWMA vol). If None, defaults to 1.0 (no scaling).
-    eps : numerical floor for the volatility denominator.
-
-    Returns
-    -------
-    Negative Sharpe ratio (scalar tensor) suitable for SGD minimisation.
+    
+    If transaction_cost > 0, subtracts the cost of turnover from the realised return at each step (paper Eq. C1).
+    The cost is on |Δ(X/sigma)| -- i.e., the change in the vol-scaled (unleveraged) position -- not on the raw position.
     """
     if ex_ante_vol is None:
-        scaled = positions * returns
+        scaled_pos = positions
+        scaled_ret = positions * returns
     else:
-        scaled = positions * (target_vol / (ex_ante_vol + eps)) * returns
-
-    # Pool across all (asset, time) pairs in the minibatch
-    flat = scaled.reshape(-1)
+        scaled_pos = positions / (ex_ante_vol + eps)
+        scaled_ret = positions * (target_vol / (ex_ante_vol + eps)) * returns
+    
+    if transaction_cost > 0:
+        # Turnover: change in scaled position. First step has no t-1; pad with zeros.
+        prev_scaled = torch.cat([torch.zeros_like(scaled_pos[:, :1]),
+                                  scaled_pos[:, :-1]], dim=1)
+        turnover = (scaled_pos - prev_scaled).abs()
+        cost = transaction_cost * target_vol * turnover
+        scaled_ret = scaled_ret - cost
+    
+    flat = scaled_ret.reshape(-1)
     flat = flat[torch.isfinite(flat)]
     if flat.numel() < 2:
         return torch.tensor(0.0, device=positions.device, requires_grad=True)
-
+    
     mean = flat.mean()
     std = flat.std() + eps
     sharpe = mean / std * (252.0 ** 0.5)
