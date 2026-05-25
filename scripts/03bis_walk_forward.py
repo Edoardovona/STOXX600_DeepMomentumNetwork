@@ -36,7 +36,7 @@ WORKED EXAMPLES
 
 4) Realistic deployment (long-only + 25 bps costs), all folds:
        python scripts/03bis_walk_forward.py --use-cpd --long-only --tc 0.0025
-
+       
 5) Rolling-window sensitivity check, with CPD:
        python scripts/03bis_walk_forward.py --use-cpd --fold-type rolling
 

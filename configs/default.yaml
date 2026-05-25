@@ -60,20 +60,16 @@ fold_type: expanding   # "expanding" or "rolling"
 
 folds_expanding:
   - {train_start: "2006-01-01", train_end: "2010-12-31",
-     test_start:  "2011-01-01", test_end:  "2015-12-31"}
+     test_start:  "2011-01-01", test_end:  "2015-12-31"}  
   - {train_start: "2006-01-01", train_end: "2015-12-31",
-     test_start:  "2016-01-01", test_end:  "2020-12-31"}
+     test_start:  "2016-01-01", test_end:  "2020-12-31"}  
   - {train_start: "2006-01-01", train_end: "2020-12-31",
-     test_start:  "2021-01-01", test_end:  "2023-12-31"}
-  - {train_start: "2006-01-01", train_end: "2023-12-31",
-     test_start:  "2024-01-01", test_end:  "2026-05-06"}
+     test_start:  "2021-01-01", test_end:  "2025-12-31"}  
 
-folds_rolling: # 10 year rolling window
-  - {train_start: "2006-01-01", train_end: "2015-12-31",
-     test_start:  "2016-01-01", test_end:  "2018-12-31"}
-  - {train_start: "2009-01-01", train_end: "2018-12-31",
-     test_start:  "2019-01-01", test_end:  "2021-12-31"}
-  - {train_start: "2012-01-01", train_end: "2021-12-31",
-     test_start:  "2022-01-01", test_end:  "2024-12-31"}
-  - {train_start: "2014-01-01", train_end: "2023-12-31",
-     test_start:  "2024-01-01", test_end:  "2026-05-06"}
+folds_rolling:
+  - {train_start: "2006-01-01", train_end: "2016-12-31",
+     test_start:  "2017-01-01", test_end:  "2019-12-31"} 
+  - {train_start: "2010-01-01", train_end: "2019-12-31",
+     test_start:  "2020-01-01", test_end:  "2022-12-31"} 
+  - {train_start: "2013-01-01", train_end: "2022-12-31",
+     test_start:  "2023-01-01", test_end:  "2025-12-31"}  

@@ -22,23 +22,26 @@ WORKED EXAMPLES
 ==============================================================================
 
 1) Backtest the paper main result (0 bps costs, expanding folds):
-       python scripts/04_run_backtest.py --tc 0.0
+       python scripts/04_run_backtest.py --tc 0.0 --fold-type expanding
 
-2) Realistic deployment scenario (25 bps backtest costs):
-       python scripts/04_run_backtest.py --tc 0.0025
+2) Realistic deployment scenario (25 bps backtest costs, expanding):
+       python scripts/04_run_backtest.py --tc 0.0025 --fold-type expanding
 
-3) Sensitivity to walk-forward window type:
+3) Rolling-window sensitivity check:
        python scripts/04_run_backtest.py --fold-type rolling --tc 0.0025
+
+4) Generate both expanding and rolling results (run twice):
+       python scripts/04_run_backtest.py --fold-type expanding
+       python scripts/04_run_backtest.py --fold-type rolling
 
 ==============================================================================
 OUTPUTS
 ==============================================================================
 
 CSV tables saved to data/processed/backtest/:
-    metrics_raw.csv          paper Exhibit 3 (raw scale)
-    metrics_rescaled.csv     paper Exhibit 4 (rescaled to 15% vol)
-    sharpe_by_year.csv       year-by-year breakdown
-    cost_sensitivity.csv     Sharpe at multiple cost levels
+    metrics_raw_{fold_type}.csv          paper Exhibit 3 (raw scale)
+    metrics_rescaled_{fold_type}.csv     paper Exhibit 4 (rescaled to 15% vol)
+    sharpe_by_year_{fold_type}.csv       year-by-year breakdown
 
 For visualisations and step-by-step analysis, use notebooks/04_backtest.ipynb.
 """
@@ -64,6 +67,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 def add_transaction_costs(df: pd.DataFrame, position_col: str, vol_col: str,
                           gross_col: str, net_col: str,
                           cost: float, target_vol: float) -> pd.DataFrame:
+    """Subtract cost * target_vol * |Δ(X/σ)| from the gross strategy return.
+    
+    Per-ticker turnover; output written to net_col.
+    """
     df = df.sort_values(["ticker", "date"]).copy()
     df["_scaled_pos"]   = df[position_col] / np.maximum(df[vol_col], 1e-6)
     df["_d_scaled_pos"] = df.groupby("ticker")["_scaled_pos"].diff().fillna(0.0)
@@ -72,16 +79,19 @@ def add_transaction_costs(df: pd.DataFrame, position_col: str, vol_col: str,
 
 
 def to_portfolio_series(df: pd.DataFrame, strat_col: str) -> pd.Series:
+    """Average strategy return across stocks per date."""
     return df.groupby("date")[strat_col].mean().sort_index()
 
 
 def compute_metrics(returns: pd.Series) -> dict:
+    """Standard performance metrics for a daily strategy return series."""
     r = returns.dropna()
     if len(r) < 2:
         return {k: np.nan for k in [
             "Returns", "Vol", "Sharpe", "Downside Dev", "Sortino",
             "MDD", "Calmar", "% +ve", "Avg P / Avg L"
         ]}
+    
     ann_ret = r.mean() * 252
     ann_vol = r.std() * np.sqrt(252)
     sharpe  = ann_ret / ann_vol if ann_vol > 0 else np.nan
@@ -109,14 +119,18 @@ def compute_metrics(returns: pd.Series) -> dict:
 
 
 def rescale_to_target_vol(returns: pd.Series, target_vol: float) -> pd.Series:
+    """Scale daily returns so the realised annualised vol equals target_vol."""
     r = returns.dropna()
-    if len(r) < 2: return r
+    if len(r) < 2:
+        return r
     realised_vol = r.std() * np.sqrt(252)
-    if realised_vol == 0: return r
+    if realised_vol == 0:
+        return r
     return r * (target_vol / realised_vol)
 
 
 def format_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """Pretty-print formatting for the metrics table."""
     fmt = df.copy()
     for col in ["Returns", "Vol", "Downside Dev", "MDD"]:
         fmt[col] = fmt[col].map(lambda x: f"{x:+.2%}" if pd.notna(x) else "—")
@@ -127,6 +141,7 @@ def format_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def yearly_sharpe(returns: pd.Series) -> pd.Series:
+    """Compute annualised Sharpe per calendar year."""
     r = returns.dropna()
     return r.groupby(r.index.year).apply(
         lambda y: (y.mean() / y.std()) * np.sqrt(252) if y.std() > 0 else 0.0
@@ -150,6 +165,7 @@ def main() -> None:
 
     with open(PROJECT_ROOT / args.config) as f:
         cfg = yaml.safe_load(f)
+    
     if args.fold_type:
         cfg["fold_type"] = args.fold_type
     
@@ -265,7 +281,7 @@ def main() -> None:
         label: yearly_sharpe(s) for label, s in portfolios.items()
     })
 
-    # Print and save
+    # Print
     print(f"\n{'='*70}")
     print(f"Performance metrics ({tc*1e4:.0f} bps backtest-time costs)")
     print(f"{'='*70}")
@@ -276,13 +292,19 @@ def main() -> None:
     print(f"{'='*70}")
     print(format_metrics(rescaled_metrics_df).to_string())
     
+    # Save with fold_type suffix
     backtest_dir = PROJECT_ROOT / "data" / "processed" / "backtest"
     backtest_dir.mkdir(parents=True, exist_ok=True)
-    format_metrics(metrics_df).to_csv(backtest_dir / "metrics_raw.csv")
-    format_metrics(rescaled_metrics_df).to_csv(backtest_dir / "metrics_rescaled.csv")
-    yearly_table.round(2).to_csv(backtest_dir / "sharpe_by_year.csv")
+    
+    suffix = f"_{fold_type}"
+    format_metrics(metrics_df).to_csv(backtest_dir / f"metrics_raw{suffix}.csv")
+    format_metrics(rescaled_metrics_df).to_csv(backtest_dir / f"metrics_rescaled{suffix}.csv")
+    yearly_table.round(2).to_csv(backtest_dir / f"sharpe_by_year{suffix}.csv")
     
     print(f"\nTables saved to: {backtest_dir}")
+    print(f"  metrics_raw{suffix}.csv")
+    print(f"  metrics_rescaled{suffix}.csv")
+    print(f"  sharpe_by_year{suffix}.csv")
 
 
 if __name__ == "__main__":
