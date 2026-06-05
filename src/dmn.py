@@ -1,9 +1,8 @@
 """Deep Momentum Network: LSTM-based architecture for time-series momentum,
 following Lim, Zohren & Roberts (2019) and Wood, Roberts & Zohren (2022).
 
-The model takes per-asset feature sequences and outputs positions in (-1, 1)
-via a tanh head. Training optimizes the (negative) Sharpe ratio of the
-resulting strategy returns, end-to-end.
+The model takes per-asset feature sequences and outputs positions either in (-1, 1) or (0, 1).
+Training optimizes the (negative) Sharpe ratio of the resulting strategy returns, end-to-end.
 
 Reference equations:
     Eq. 11  -- Volatility-scaled strategy return
@@ -71,7 +70,7 @@ def sharpe_loss(
     """Negative annualised Sharpe ratio of the volatility-scaled strategy.
     
     If transaction_cost > 0, subtracts the cost of turnover from the realised return at each step (paper Eq. C1).
-    The cost is on |Δ(X/sigma)| -- i.e., the change in the vol-scaled (unleveraged) position -- not on the raw position.
+    The cost is on |Δ(X/sigma)| i.e., the change in the vol-scaled (unleveraged) position, not on the raw position.
     """
     if ex_ante_vol is None:
         scaled_pos = positions
@@ -81,11 +80,9 @@ def sharpe_loss(
         scaled_ret = positions * (target_vol / (ex_ante_vol + eps)) * returns
     
     if transaction_cost > 0:
-        # Turnover: change in scaled position. First step has no t-1; pad with zeros.
-        prev_scaled = torch.cat([torch.zeros_like(scaled_pos[:, :1]),
-                                  scaled_pos[:, :-1]], dim=1)
+        prev_scaled = torch.cat([torch.zeros_like(scaled_pos[:, :1]), scaled_pos[:, :-1]], dim=1)
         turnover = (scaled_pos - prev_scaled).abs()
-        cost = transaction_cost * target_vol * turnover
+        cost = transaction_cost * target_vol * turnover # cost per period
         scaled_ret = scaled_ret - cost
     
     flat = scaled_ret.reshape(-1)
@@ -95,5 +92,5 @@ def sharpe_loss(
     
     mean = flat.mean()
     std = flat.std() + eps
-    sharpe = mean / std * (252.0 ** 0.5)
+    sharpe = mean / std * (252 ** 0.5)
     return -sharpe
