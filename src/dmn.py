@@ -64,13 +64,38 @@ def sharpe_loss(
     returns: torch.Tensor,
     target_vol: float = 0.15,
     ex_ante_vol: torch.Tensor | None = None,
-    transaction_cost: float = 0.0,    # cost per unit change in scaled position
+    transaction_cost: float = 0.0,
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """Negative annualised Sharpe ratio of the volatility-scaled strategy.
-    
-    If transaction_cost > 0, subtracts the cost of turnover from the realised return at each step (paper Eq. C1).
-    The cost is on |Δ(X/sigma)| i.e., the change in the vol-scaled (unleveraged) position, not on the raw position.
+
+    If transaction_cost > 0, subtracts the cost of turnover from the realised
+    return at each step (paper Eq. C1). The cost is on |Δ(X/sigma)|, i.e. the
+    change in the vol-scaled (unleveraged) position, not on the raw position.
+
+    --------------------------------------------------------------------
+    Quality-weighted cost (extension over the paper's Eq. C1):
+
+    The original formula charges a flat cost on every unit of turnover,
+    regardless of whether the trade was a good idea. This means a position
+    change that correctly anticipates a move pays the same marginal cost as
+    a noisy, unproductive flip — there is no incentive to trade when the
+    expected edge clearly outweighs the cost.
+
+    We weight the cost by trade "conviction": whether the position change
+    moved in the direction the realised return subsequently confirms.
+        agreement = sign(delta_position) * sign(realised_return)
+            +1  ->  the trade was directionally correct (confirmed)
+            -1  ->  the trade was directionally wrong (contradicted)
+             0  ->  no clear relationship
+    A confirmed trade is charged less (cost discounted towards 0); a
+    contradicted trade is charged close to the full flat cost. This lets
+    the model place a trade "no matter the transaction cost" when the
+    realised outcome justifies it, while still penalising noisy churn.
+
+    This only activates when transaction_cost > 0; with transaction_cost=0
+    the loss reduces exactly to the paper's original Sharpe loss.
+    --------------------------------------------------------------------
     """
     if ex_ante_vol is None:
         scaled_pos = positions
@@ -78,18 +103,24 @@ def sharpe_loss(
     else:
         scaled_pos = positions / (ex_ante_vol + eps)
         scaled_ret = positions * (target_vol / (ex_ante_vol + eps)) * returns
-    
+
     if transaction_cost > 0:
         prev_scaled = torch.cat([torch.zeros_like(scaled_pos[:, :1]), scaled_pos[:, :-1]], dim=1)
-        turnover = (scaled_pos - prev_scaled).abs()
-        cost = transaction_cost * target_vol * turnover # cost per period
+        delta = scaled_pos - prev_scaled
+        turnover = delta.abs()
+
+        # Trade quality weighting (see docstring above)
+        agreement = torch.sign(delta) * torch.sign(returns)
+        quality_multiplier = torch.sigmoid(-agreement)  # temperature fixed at 1.0
+
+        cost = transaction_cost * target_vol * turnover * quality_multiplier
         scaled_ret = scaled_ret - cost
-    
+
     flat = scaled_ret.reshape(-1)
     flat = flat[torch.isfinite(flat)]
     if flat.numel() < 2:
         return torch.tensor(0.0, device=positions.device, requires_grad=True)
-    
+
     mean = flat.mean()
     std = flat.std() + eps
     sharpe = mean / std * (252 ** 0.5)

@@ -42,7 +42,7 @@ macd_pairs:
 
 # Deep Momentum Network
 dmn:
-  cpd_lbw:    63       # CPD lookback window (paper sweeps {10, 21, 63, 126, 252})
+  cpd_lbw:    21       # CPD lookback window (paper sweeps {10, 21, 63, 126, 252})
   cpd_stride:  1
   seq_len:    63       # LSTM sequence length (paper Appendix B)
   hidden:     20       # LSTM hidden state size
