@@ -11,7 +11,6 @@ assets: []
 # Data range 
 start_year: 2006
 end_year: 2026
-csv_last_year: 2024       # CSVs cover up to this year; xlsx takes over after
 
 # Return horizons (per-ticker rolling windows)
 # Each entry: [lag_in_days, label]. Used for arithmetic and log returns.
@@ -40,7 +39,7 @@ macd_pairs:
   - [32, 96]
 
 
-# Deep Momentum Network
+# Deep Momentum Network (LTSM)
 dmn:
   cpd_lbw:    21       # CPD lookback window (paper sweeps {10, 21, 63, 126, 252})
   cpd_stride:  1
@@ -54,6 +53,25 @@ dmn:
   seed:        1
   long_only: false              # true for X_t in (0,1)
   transaction_cost: 0.0         # 0.0 = no costs; 0.0025 = 25 bps
+
+
+# LightGBM
+lgbm:
+  n_estimators: 300
+  learning_rate: 0.05
+  max_depth: 4
+  num_leaves: 15
+  min_child_samples: 20
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+  position_halflife: 10      # EMA smoothing halflife (days)
+  alpha_max: 10              # upper bound for sigmoid calibration search
+  val_frac: 0.10             # fraction of training data held out for validation/calibration
+  cpd_filter_strength: 1.0   # 0 = no filter, 1 = full neutralisation on max nu
+  transaction_cost: 0.0      # used for default alpha calibration; override with --tc
+
 
 # Walk-forward validation
 fold_type: expanding   # "expanding" or "rolling"

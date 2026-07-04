@@ -1,186 +1,171 @@
-# Slow Momentum with Fast Reversion
+# Slow Momentum with Fast Reversion: STOXX 600 Implementation
 
-A Python implementation and extension of the trading strategy described in:
+A Python implementation and extension of:
 
 > **Wood, K., Roberts, S., & Zohren, S. (2022).**
 > *Slow Momentum with Fast Reversion: A Trading Strategy Using Deep Learning and Changepoint Detection.*
 > The Journal of Financial Data Science, Winter 2022.
 
-This project is a statistical / quantitative research work carried out at ESILV
-(Pergam MSc 2026). The goal is to create investment signals from the paper,
-implement them in Python, optimize and improve the model, and explore relevant
-extensions.
+Statistical / quantitative research project carried out at ESILV,
+following the scaffold defined in the reference repository
+[`Pergam_MSc_2026`](https://github.com/VNAZZARENO/Pergam_MSc_2026). This branch adapts
+the paper's methodology from its original 50-future universe (1990–2020) to the
+**STOXX 600 equity universe (2006–2026)**, and extends it with a LightGBM baseline,
+a lookback-window sensitivity study, and a cost-aware training objective.
 
 ---
 
-## Project Context
+## 1. Project context
 
-Time-series momentum (TSMOM) strategies exploit the empirical fact that strong
-price trends tend to persist. They are a core building block of Commodity
-Trading Advisors (CTAs) and alternative investment funds.
+Time-series momentum strategies exploit the tendency of price trends to persist, but
+they react slowly around *momentum turning points* — moments where a trend abruptly
+reverses (e.g. the 2020 COVID crash). The paper's answer is to feed an online
+**Changepoint Detection (CPD)** signal, built from Gaussian Processes, into a
+**Deep Momentum Network (DMN)**: an LSTM trained end-to-end on the (negative)
+Sharpe ratio of the resulting position, rather than on a directional forecast.
 
-However, classical momentum strategies (and even recent deep-learning variants)
-have **underperformed in recent years**, mostly because they react too slowly
-around *momentum turning points* — moments when an uptrend suddenly flips into
-a downtrend (or vice versa), such as during the 2020 COVID crash.
+This repository reproduces that pipeline on European single-stock equities and adds:
 
-The paper proposes a hybrid pipeline that mixes:
+- A **LightGBM** alternative to the LSTM, sharing the same feature set and
+  evaluation harness, for a tree-based vs. recurrent comparison.
+- A **cost-aware training/calibration path** for both models (25 bps transaction
+  cost baked into the loss / alpha calibration, not just applied post-hoc at backtest time).
+- A **CPD lookback-window sensitivity study** (`lbw ∈ {10, 21, 63, 126, 252}`).
+- A **GARCH(1,1) volatility-scaling robustness check** against the default 60-day EWMA.
+- Four **changepoint-detection methods compared head-to-head** (Binary Segmentation,
+  CUSUM, BOCPD, GP + changepoint kernel) before committing to the GP method used
+  in the main pipeline.
 
-1. A **slow momentum** signal that captures persistent trends.
-2. A **fast mean-reversion** signal that exploits localized price moves.
-3. An **online Changepoint Detection (CPD) module** based on Gaussian Processes
-   that tells the model *when* and *how strongly* the regime is changing, so
-   that the balance between the two signals is learned in a data-driven way.
-
-The CPD output is fed into a **Deep Momentum Network (DMN)** — an LSTM trained
-directly on the Sharpe ratio as loss function — which outputs the position to
-hold for each asset.
-
-Reported results: adding the CPD module yields a **+33% improvement in Sharpe
-ratio** over the LSTM baseline from 1995–2020, and roughly **+66%** over the
-most recent (and more turbulent) 2015–2020 period.
-
----
-
-## Core Ideas of the Paper
-
-### 1. Changepoint Detection via Gaussian Processes
-
-- Daily returns are standardized over a lookback window (LBW) `l`.
-- A Gaussian Process regression is fit with a **Matérn 3/2 kernel** (well suited
-  to noisy, non-smooth financial data).
-- A **changepoint kernel** is defined as a smooth sigmoid blend between two
-  Matérn 3/2 kernels, one on each side of an unknown changepoint location `c`.
-- Hyperparameters are fitted by minimizing the negative log marginal likelihood
-  (L-BFGS-B via `GPflow` / `scipy.optimize`).
-- Two normalized scalars are extracted per asset per day:
-  - **Severity** `ν ∈ (0, 1)`: how much the changepoint kernel improves the
-    likelihood vs. a single Matérn kernel.
-  - **Location** `γ ∈ (0, 1)`: where the detected changepoint sits within the
-    lookback window.
-
-### 2. Deep Momentum Network (LSTM)
-
-- Architecture: LSTM + time-distributed dense layer with `tanh` activation,
-  directly outputting a position `X ∈ (-1, 1)`.
-- **Loss function:** negative annualized Sharpe ratio — the network is trained
-  to maximize risk-adjusted return, not to predict direction.
-- Inputs per asset per day:
-  - Normalized returns at several horizons (1, 21, 63, 126, 252 days).
-  - MACD indicators with pairs `{(8, 24), (16, 28), (32, 96)}`.
-  - CPD **severity** and **location** for the chosen LBW.
-- Volatility scaling targets an annualized vol of **15%** per asset using a
-  60-day EWM standard deviation.
-
-### 3. Backtesting Protocol
-
-- **Universe:** 50 liquid continuous futures (commodities, equities, fixed
-  income, FX) from Pinnacle Data Corp, 1990–2020.
-- **Expanding window:** train on 1990–1995, test 1995–2000, then roll forward
-  every 5 years, re-optimizing hyperparameters at each step.
-- **Benchmarks:** Long only, MACD, TSMOM (Moskowitz `w=0`, blended `w=0.5`,
-  short `w=1`), and a plain LSTM DMN without CPD.
-- **Metrics:** annualized return, volatility, Sharpe, Sortino, Calmar, max
-  drawdown, % of positive returns, and avg profit / avg loss.
-
-### Reported Benchmark (rescaled to 15% target vol)
-
-| Strategy                 | Return  | Sharpe | Sortino | Calmar |
-|--------------------------|--------:|-------:|--------:|-------:|
-| Long Only                |  6.62%  | 0.44   | 0.64    | 0.79   |
-| MACD                     | 11.08%  | 0.77   | 1.09    | 0.95   |
-| TSMOM (w = 0)            | 13.79%  | 0.94   | 1.32    | 1.35   |
-| LSTM (DMN, no CPD)       | 21.03%  | 1.62   | 2.46    | 2.79   |
-| **LSTM + CPD (21d LBW)** | 30.57%  | 2.04   | 3.07    | 3.75   |
-| **LSTM + CPD (opt. LBW)**| **31.52%** | **2.16** | **3.33** | **3.50** |
-
----
-
-## Repository Layout
+## 2. Repository layout
 
 ```
-Pergam_MSc_2026/
+.
 ├── README.md
-├── requirements.txt            # Planned Python dependencies
-├── documentation/              # Reference paper (PDF) and notes
-├── configs/                    # YAML configs (assets, horizons, hyperparams)
-│   └── default.yaml
-├── data/                       # Gitignored
-│   ├── raw/                    # Original Pinnacle / futures CSVs
-│   └── processed/              # Cleaned returns, features, CPD outputs
-├── src/                        # Library code
-│   ├── data_loader.py          # Load raw futures data
-│   ├── preprocessing.py        # Returns, EWM vol, vol scaling
-│   ├── features.py             # Normalized returns + MACD
-│   ├── cpd.py                  # GP Matérn 3/2 + changepoint kernel
-│   ├── model.py                # LSTM DMN + Sharpe loss
-│   ├── backtest.py             # Expanding-window backtest harness
-│   └── metrics.py              # Sharpe, Sortino, Calmar, MDD, hit ratio
-├── scripts/                    # Thin CLI entry points
-│   ├── 01_build_dataset.py
-│   ├── 02_compute_cpd.py
-│   ├── 03_train_dmn.py
-│   └── 04_run_backtest.py
-└── notebooks/
-    └── 00_exploration.ipynb
+├── requirements.txt
+├── configs/
+│   └── default.yaml              # data paths, universe, horizons, DMN/LightGBM/CPD hyperparameters, walk-forward folds
+├── documentation/
+│   └── paper.pdf                 # Wood, Roberts & Zohren (2022)
+├── data/                          # gitignored except for READMEs / .gitkeep
+│   ├── raw/stoxx600/
+│   │   ├── SXXR.xlsx              # Bloomberg pull: stocks, year_by_year, unique_tickers, benchmark sheets
+│   │   └── README.md
+│   └── processed/
+│       ├── stoxx600/              # cleaned panel + benchmarks (stoxx600_processed.csv, benchmark_stoxx600_ew.csv)
+│       ├── cpd/                   # precomputed CPD features (cpd_features_lbw{lbw}_s{stride}[_ticker].csv)
+│       └── models/                # model checkpoints (.pt / .txt) + OOS predictions (.csv)
+├── notebooks/
+│   ├── 00_exploration.ipynb                 # data sanity checks, feature/return distributions
+│   ├── 01_data_loading.ipynb                # Bloomberg → cleaned long-format panel + features + benchmarks
+│   ├── 02_changepoint_detection.ipynb       # 4-method CPD comparison (BinSeg, CUSUM, BOCPD, GP)
+│   ├── 03_deep_momentum_network.ipynb       # single-fold LSTM DMN prototype
+│   └── 04_backtest.ipynb                    # walk-forward aggregation, metrics, equity curves, sensitivity
+├── scripts/
+│   ├── 02_compute_cpd.py                    # precompute GP-CPD features for the full panel (parallelised)
+│   ├── 02bis_compute_cpd_single.py          # precompute GP-CPD features for one ticker (fast iteration/testing)
+│   ├── 03_train_dmn.py                      # train the LSTM DMN on a single walk-forward fold
+│   ├── 03_train_lgbm.py                     # train the LightGBM DMN on a single walk-forward fold
+│   └── 03bis_walk_forward.py                # orchestrator: runs 03_train_{dmn,lgbm}.py across all folds
+└── src/
+    ├── cpd.py                  # GP Matérn 3/2 + changepoint kernel, plus BinSeg / CUSUM / BOCPD
+    ├── dmn.py                  # LSTM DeepMomentumNetwork + Sharpe-ratio loss (cost-aware variant)
+    ├── lgbm.py                 # LightGBM training, alpha calibration, EMA smoothing, CPD risk filter
+    ├── sector_mapping.py       # Bloomberg ticker → GICS sector lookup
+    └── __init__.py
 ```
 
-All `src/` modules and `scripts/` are currently placeholders; concrete
-implementations will land in follow-up tasks, mirroring the pipeline
-described below.
+## 3. Data
 
----
+The only external input is `data/raw/stoxx600/SXXR.xlsx`, a Bloomberg terminal pull
+covering 2006–2026 (see `data/raw/stoxx600/README.md` for the sheet layout). It is
+gitignored; you'll need your own Bloomberg export to reproduce the pipeline from
+scratch. Everything downstream (`data/processed/**`) is generated by the notebooks
+and scripts below and is also gitignored, aside from placeholder `.gitkeep` files.
 
-## Planned Work
-
-1. **Data pipeline**
-   - Collect continuous futures data (Pinnacle CLC or open alternatives).
-   - Compute arithmetic returns, volatility scaling, MACD features.
-
-2. **Changepoint Detection module**
-   - Implement the Matérn 3/2 kernel GP fit.
-   - Implement the changepoint kernel with sigmoid blending.
-   - Precompute `(ν, γ)` for multiple LBWs (10, 21, 63, 126, 252 days).
-
-3. **Deep Momentum Network**
-   - LSTM with Sharpe-ratio loss, Adam optimizer, early stopping on validation
-     Sharpe.
-   - Hyperparameter search over dropout, hidden size, LBW, learning rate.
-
-4. **Backtesting engine**
-   - Expanding-window backtest from 1995 to the most recent data.
-   - Full benchmarking against Long Only, MACD and TSMOM variants.
-   - Risk-adjusted metrics: Sharpe, Sortino, Calmar, MDD.
-
-5. **Improvements and extensions**
-   - Transaction cost modeling directly inside the Sharpe loss.
-   - Alternative changepoint methods (BOCPD, ruptures, neural CPD).
-   - Alternative architectures (Temporal Fusion Transformer, attention-based
-     models).
-   - Regime-aware ensembling of multiple LBWs.
-   - Out-of-sample extension to post-2020 data.
-
----
-
-## Tech Stack (planned)
-
-- Python 3.11+, virtualenv in `.venv/`
-- `numpy`, `pandas`, `scipy`, `matplotlib`
-- `gpflow` / `tensorflow` for Gaussian Processes
-- `tensorflow` or `pytorch` for the LSTM / DMN
-- `scikit-learn` for baselines and utilities
-
-Run everything from the project venv:
+## 4. Setup
 
 ```bash
-source .venv/bin/activate && python3 <script>.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
----
+## 5. Reproducing the pipeline
 
-## Reference
+Run in order:
 
-Wood, K., Roberts, S., Zohren, S. (2022).
-*Slow Momentum with Fast Reversion: A Trading Strategy Using Deep Learning and
-Changepoint Detection.* The Journal of Financial Data Science, Winter 2022.
-See `documentation/jfds.2021.1.081.full 1.pdf`.
+1. **`notebooks/01_data_loading.ipynb`** — loads `SXXR.xlsx`, applies point-in-time
+   universe masking, cleans prices (forward-fill + stale-price detection), computes
+   returns / volatility / MACD / sector-relative features, builds the SXXR and
+   synthetic EW benchmarks, and writes the processed CSVs.
+2. **`notebooks/00_exploration.ipynb`** — optional, sanity-checks the processed data 
+3. **`notebooks/02_changepoint_detection.ipynb`** — compares four CPD methods on a
+   handful of blue-chip stocks against a set of known macro events; used to justify
+   the GP + changepoint-kernel method used downstream.
+4. **Precompute CPD features for the full panel:**
+   ```bash
+   python scripts/02_compute_cpd.py --lbw 21 --stride 5
+   ```
+   (Use `scripts/02bis_compute_cpd_single.py --ticker "TTE FP"` for fast iteration on one ticker.)
+5. **Train a model on one fold**, or all folds via the orchestrator:
+   ```bash
+   # LSTM, paper-style, with CPD
+   python scripts/03_train_dmn.py --fold 0 --use-cpd --no-long-only
+
+   # LightGBM, cost-aware, all folds
+   python scripts/03bis_walk_forward.py --model lgbm --use-cpd --tc 0.0025
+   ```
+   `notebooks/03_deep_momentum_network.ipynb` is the single-fold, diagnostics-heavy
+   prototype version of the same LSTM training loop used by `scripts/03_train_dmn.py`.
+6. **`notebooks/04_backtest.ipynb`** — concatenates all folds' out-of-sample
+   predictions into a continuous track record, applies transaction costs, computes
+   the full performance table (Sharpe, Sortino, Calmar, MDD, hit ratio, …) against
+   classical benchmarks (Long-only, Moskowitz TSMOM, MACD, SXXR), and runs the
+   CPD lookback / transaction-cost sensitivity analyses.
+
+## 6. Methodology summary
+
+- **Universe**: STOXX 600 constituents, point-in-time masked year by year to avoid
+  survivorship bias (~30–40 intra-year additions/deletions per year are not
+  captured — a known, minor approximation, see notebook 01's closing notes).
+- **Features**: multi-horizon arithmetic/log returns, 60-day EWMA and rolling
+  realised volatility, GARCH(1,1) volatility (robustness check), vol-normalised
+  MACD `(8,24) / (16,48) / (32,96)`, sector-relative returns, and GP-CPD
+  severity (ν) / location (γ).
+- **CPD**: Gaussian Process with a Matérn 3/2 kernel and a sigmoid-blended
+  changepoint kernel (Wood, Roberts & Zohren, 2022, Eq. 4–10), benchmarked against
+  Binary Segmentation, CUSUM, and BOCPD.
+- **Models**: an LSTM DMN (`src/dmn.py`) trained end-to-end on a Sharpe-ratio loss,
+  with an optional cost-aware, "trade-quality-weighted" transaction cost term; and
+  a LightGBM alternative (`src/lgbm.py`) with post-hoc alpha calibration, EMA
+  position smoothing, and a CPD-based risk filter, for a like-for-like comparison.
+- **Validation**: walk-forward, expanding or rolling window (configurable in
+  `configs/default.yaml`), three folds spanning 2011–2025 out-of-sample.
+- **Costs**: 25 bps applied uniformly at the backtest layer to every strategy,
+  regardless of whether it was trained cost-aware, so comparisons stay fair.
+
+## 7. Known limitations
+
+- STOXX 600 membership is refreshed once a year (Bloomberg's annual
+  `year_by_year` snapshot); intra-year (quarterly) index changes are not captured.
+- The 60-day EWMA volatility used for position scaling has a small look-ahead
+  (the current day's return carries a small weight in its own vol estimate).
+- The GP-CPD lookback sensitivity study shows the four tested windows moving in
+  near lock-step across years, suggesting the CPD module adds limited
+  incremental signal over the existing momentum/MACD features on single-stock
+  equities (see `notebooks/04_backtest.ipynb`, "CPD lookback window sensitivity").
+- `lbw=252` cannot be evaluated under the expanding-fold structure (its first
+  training window is shorter than the CPD warm-up period); it is only available
+  under the rolling-fold structure.
+
+## 8. Tech stack
+
+Python 3.11+, `pandas` / `numpy` / `scipy`, `pytorch` (LSTM DMN), `lightgbm`,
+`ruptures` (Binary Segmentation), `arch` (GARCH), `scikit-learn`, `joblib`
+(parallel CPD precompute), `pyyaml`. See `requirements.txt`.
+
+## 9. Reference
+
+Wood, K., Roberts, S., Zohren, S. (2022). *Slow Momentum with Fast Reversion: A
+Trading Strategy Using Deep Learning and Changepoint Detection.* The Journal of
+Financial Data Science, Winter 2022. See `documentation/paper.pdf`.

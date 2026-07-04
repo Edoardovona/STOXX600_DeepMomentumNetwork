@@ -1,11 +1,18 @@
-# Planned dependencies for the Slow Momentum with Fast Reversion project.
-# Uncomment / pin versions once the .venv is finalized.
-#
-# numpy
-# pandas
-# scipy
-# matplotlib
-# scikit-learn
-# gpflow
-# tensorflow
-# pyyaml
+# Core
+numpy
+pandas
+scipy
+matplotlib
+pyyaml
+
+# Modeling
+torch
+lightgbm
+scikit-learn
+arch          # GARCH(1,1) / GJR-GARCH volatility
+ruptures      # Binary Segmentation CPD baseline
+shap          # LightGBM feature-importance diagnostics (src/lgbm.py::compute_shap)
+
+# Utilities
+joblib        # parallel CPD precompute (scripts/02_compute_cpd.py)
+openpyxl      # required by pandas to read the .xlsx Bloomberg source

@@ -1,68 +1,46 @@
-# STOXX 600 Raw Price Data
+# STOXX 600 Raw Data
 
-This folder contains the raw annual CSV price snapshots for the STOXX 600 dataset.
-These files are the input data used to build the cleaned dataset and to compute
-features for the strategy pipeline.
+This folder contains the single Bloomberg export used as the sole raw data
+source for the project: **`SXXR.xlsx`**.
 
-## Folder structure
+## File
 
-- `data/raw/stoxx600/`
-  - `prices_2006.csv`
-  - `prices_2007.csv`
-  - `prices_2008.csv`
-  - `prices_2009.csv`
-  - `prices_2010.csv`
-  - `prices_2011.csv`
-  - `prices_2012.csv`
-  - `prices_2013.csv`
-  - `prices_2014.csv`
-  - `prices_2015.csv`
-  - `prices_2016.csv`
-  - `prices_2017.csv`
-  - `prices_2018.csv`
-  - `prices_2019.csv`
-  - `prices_2020.csv`
-  - `prices_2021.csv`
-  - `prices_2022.csv`
-  - `prices_2023.csv`
-  - `prices_2024.csv`
-  - `README.md`
+- `data/raw/stoxx600/SXXR.xlsx` — Bloomberg terminal pull, 2006-01-01 to
+  2026-05-06, with four sheets:
+  - **`stocks`** — wide price matrix, dates × tickers. Column headers include
+    the Bloomberg " Equity" suffix (e.g. `"AD NA Equity"`), stripped on load.
+    Empty cells mean either the local exchange was closed that day, or the
+    ticker had no data that day; both become `NaN` and are disambiguated by
+    the universe mask below.
+  - **`year_by_year`** — no header row; one column per calendar year
+    (`START_YEAR` onward), each listing that year's STOXX 600 constituents.
+    This is the point-in-time universe used to mask survivorship bias out of
+    the `stocks` sheet.
+  - **`unique_tickers`** — union of all tickers ever in the index over the
+    period (reference only; not required by the pipeline).
+  - **`benchmark`** — SXXR Index daily closing levels (cap-weighted STOXX 600
+    benchmark).
 
-## File naming convention
+## How it's used
 
-Each CSV file is named as `prices_YYYY.csv`, where `YYYY` is the calendar year.
-Files are intended to be loaded in chronological order and concatenated to form a
-continuous price history across years.
+`notebooks/01_data_loading.ipynb` is the only place this file is read. It:
 
-## Recommended usage
-
-1. Load each file using a CSV reader such as `pandas.read_csv()`.
-2. Parse the `Date` column as a datetime index.
-3. Concatenate the yearly files along the time axis.
-4. Clean and normalize the resulting dataset before feature engineering.
-
-Example with pandas:
-
-```python
-import pandas as pd
-from pathlib import Path
-
-folder = Path('data/raw/stoxx600')
-files = sorted(folder.glob('prices_*.csv'))
-df = pd.concat(
-    [pd.read_csv(f, parse_dates=['Date']) for f in files],
-    ignore_index=True,
-)
-```
-
-## Purpose
-
-This raw data folder is the initial source for the project's data pipeline. The
-cleaned outputs should be written to `data/processed/` after preprocessing,
-feature generation, and any dataset validation steps.
+1. Loads `stocks`, strips the " Equity" suffix, coerces to numeric, restricts
+   to `[start_year, end_year]` from `configs/default.yaml`.
+2. Loads `year_by_year` and builds a point-in-time universe mask, zeroing out
+   `(date, ticker)` cells where the ticker wasn't a constituent that year.
+3. Forward-fills short gaps (capped at 5 trading days) and flags stale prices,
+   so downstream returns/volatility aren't corrupted by filled or repeated
+   values.
+4. Loads `benchmark` for the SXXR series, and builds a synthetic equal-weighted
+   (EW) index from the masked `stocks` panel.
+5. Writes the cleaned long-format panel and benchmark series to
+   `data/processed/stoxx600/`.
 
 ## Notes
 
-- The raw files are expected to be kept unchanged.
-- Any aggregation, filtering, or transformation should happen downstream in the
-  preprocessing pipeline.
+- This file is expected to be kept unchanged; all cleaning, masking, and
+  feature engineering happens downstream in `notebooks/01_data_loading.ipynb`.
+- The file is gitignored — you need your own Bloomberg export
+  (`year_by_year`, `stocks`, `unique_tickers`, `benchmark` sheets, same
+  column/date conventions) to reproduce the pipeline from raw data.
