@@ -55,9 +55,8 @@ dmn:
   transaction_cost: 0.0         # 0.0 = no costs; 0.0025 = 25 bps
 
 
-# LightGBM (V2 -- Justine's implementation: 22 features w/ lag-1, 16 annual
-# expanding folds from 2011, raw sigmoid(alpha*score) positions, no vol-target
-# scaling. See src/lgbm.py and notebooks/03_train_lgbm.ipynb.)
+# LightGBM DMN: 20 features w/ lag-1, 16 annual expanding folds from 2011,
+# sigmoid(alpha* x z-scored score) positions, no vol-target scaling.
 lgbm:
   n_estimators: 300
   learning_rate: 0.05
@@ -69,7 +68,7 @@ lgbm:
   reg_alpha: 0.1
   reg_lambda: 0.1
   position_halflife: 10      # EMA smoothing halflife (days)
-  alpha_max: 200             # upper bound for sigmoid calibration search
+  alpha_max: 10              # upper bound for sigmoid calibration search (scores are z-scored, so ~[-3,3])
   val_frac: 0.10             # fraction of training data held out for validation/calibration
   cpd_filter_strength: 1.0   # 0 = no filter, 1 = full neutralisation on max nu
   transaction_cost: 0.0025   # 25 bps -- used for alpha calibration (net Sharpe) and matches NB04 backtest cost

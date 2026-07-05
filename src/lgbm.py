@@ -1,27 +1,15 @@
-"""LightGBM Deep Momentum Network -- V2 (ported from Justine's nb03_dmn_v2.py).
+"""LightGBM Deep Momentum Network.
 
-Architecture: 22 features (momentum + region + CPD, each with a lag-1 twin)
--> LightGBM (L2/MSE) -> sigmoid(alpha* x score) -> EMA smoothing -> CPD risk
-filter -> positions.
+20 features (momentum + CPD, each with a lag-1 twin) -> LightGBM
+(L2/MSE) -> cross-sectional z-score -> sigmoid(alpha* x z) -> EMA smoothing
+-> CPD risk filter -> positions.
 
-This replaces the previous LightGBM implementation, which trained the same
-way as the LSTM (vol-target-scaled positions, z-scored predictions, 3 static
-walk-forward folds). V2 instead:
+16 annual expanding-window folds (2011-2026), re-trained every year.
 
-  - trains on 16 annual expanding-window folds (2011-2026), not 3 x 5-year folds
-  - uses raw sigmoid(alpha * score) positions -- no vol-target rescaling and
-    no cross-sectional z-scoring of predictions
-  - uses 22 features (18 momentum incl. lag-1, 2 region, 2 CPD incl. lag-1)
-    instead of 8 momentum + 1 sector + 2 CPD (no lags)
-  - calibrates alpha on net Sharpe after EMA + transaction costs directly
-    (rather than a separate gross/net variant split)
-
-CPD features: Justine's original used stock-level CUSUM + BOCPD severity
-scores (nu_cusum_lag1, nu_bocpd_lag1). This project only has the GP-based
-changepoint kernel (Wood, Roberts & Zohren 2022) precomputed per lookback
-window (cpd_nu_<lbw>, cpd_gamma_<lbw> in data/processed/cpd/), so those two
-features are substituted here -- same feature count and role (severity +
-location), different underlying method.
+CPD features: this project only has the GP-based changepoint kernel (Wood,
+Roberts & Zohren 2022) precomputed per lookback window (cpd_nu_<lbw>,
+cpd_gamma_<lbw> in data/processed/cpd/), used here as the severity/location
+pair.
 """
 
 from __future__ import annotations
@@ -49,41 +37,30 @@ def momentum_feature_cols() -> list[str]:
     return cols
 
 
-REGION_FEATURES = ["region_rel_1d", "region_rel_1d_lag1"]
-
-
 def cpd_feature_cols(cpd_lbw: int) -> list[str]:
     return [f"cpd_nu_{cpd_lbw}_lag1", f"cpd_gamma_{cpd_lbw}_lag1"]
 
 
 def build_feature_cols(cpd_lbw: int) -> list[str]:
-    return momentum_feature_cols() + REGION_FEATURES + cpd_feature_cols(cpd_lbw)
+    return momentum_feature_cols() + cpd_feature_cols(cpd_lbw)
 
 
 TARGET_COL = "next_return"
 
 
 # --- data loading ---
-#
-# The panel and CPD features are cached to parquet after the first build
-# (mirrors Justine's parquet-based workflow) since both are expensive to
-# rebuild (full-history per-ticker groupby ops / GP changepoint scoring).
+# Panel and CPD features are cached to parquet after the first build (both
+# involve full-history per-ticker groupby ops).
 
 def load_panel(cfg: dict, root: Path, force_rebuild: bool = False) -> pd.DataFrame:
-    """Build the LightGBM V2 panel from stoxx600_processed.csv (NB01 output).
+    """Build the LightGBM panel from stoxx600_processed.csv (NB01 output).
 
-    Adds: ewma_vol, region_rel_1d, next_return target, and the lag-1 of every
-    momentum/region feature. Caches the result to panel_lgbm.parquet.
+    Adds ewma_vol, the next_return target, and the lag-1 of every momentum
+    feature.
 
-    Year-boundary fix
-    -----------------
-    The last trading day of each calendar year has no valid next-day return
-    within the same continuous run (the shift(-1) picks up the first trading
-    day of the following year, which can be several calendar days later due
-    to holidays). We invalidate next_return where the gap exceeds 5 calendar
-    days, matching the convention used elsewhere in this project (NB04,
-    the LSTM pipeline) so equity curves don't show spurious jumps at fold
-    boundaries.
+    Next-day return is invalidated where the gap to the next observation
+    exceeds 5 calendar days (year-end holiday gaps otherwise show up as a
+    spurious multi-day return).
     """
     processed_dir = root / cfg["data"]["processed_dir"]
     cache_path = processed_dir / "panel_lgbm.parquet"
@@ -91,7 +68,7 @@ def load_panel(cfg: dict, root: Path, force_rebuild: bool = False) -> pd.DataFra
         return pd.read_parquet(cache_path)
 
     keep_cols = (
-        ["date", "ticker", "1d_arith_ret", "60d_ewm_vol", "region"]
+        ["date", "ticker", "1d_arith_ret", "60d_ewm_vol"]
         + [f"{h}_norm_ret" for h in MOMENTUM_HORIZONS]
         + [f"macd_{p}" for p in MACD_PAIRS]
     )
@@ -110,17 +87,10 @@ def load_panel(cfg: dict, root: Path, force_rebuild: bool = False) -> pd.DataFra
     last_obs = df.groupby("ticker")["date"].transform("max") == df["date"]
     df.loc[last_obs, TARGET_COL] = np.nan
 
-    # Region-relative return (same construction as sector_rel in the
-    # existing pipeline, but grouped by region to match Justine's feature).
-    region_mean = (df.groupby(["date", "region"])["1d_arith_ret"]
-                     .transform("mean")
-                     .fillna(0.0))
-    df["region_rel_1d"] = df["1d_arith_ret"] - region_mean
-
     lag_src = (
         [f"{h}_norm_ret" for h in MOMENTUM_HORIZONS]
         + [f"macd_{p}" for p in MACD_PAIRS]
-        + ["ewma_vol", "region_rel_1d"]
+        + ["ewma_vol"]
     )
     for col in lag_src:
         df[f"{col}_lag1"] = df.groupby("ticker")[col].shift(1)
@@ -132,9 +102,8 @@ def load_panel(cfg: dict, root: Path, force_rebuild: bool = False) -> pd.DataFra
 
 def load_cpd_features(cfg: dict, root: Path, cpd_lbw: int, cpd_stride: int,
                       force_rebuild: bool = False) -> pd.DataFrame:
-    """Load GP-based CPD features (from scripts/02_compute_cpd.py output) and
-    add their lag-1. Caches the result to parquet alongside the source CSV.
-    """
+    """Load GP-based CPD features (scripts/02_compute_cpd.py output) and add
+    their lag-1."""
     processed_cpd = root / cfg["data"]["processed_cpd"]
     cache_path = processed_cpd / f"cpd_features_lbw{cpd_lbw}_s{cpd_stride}_lgbm.parquet"
     if cache_path.exists() and not force_rebuild:
@@ -161,8 +130,8 @@ def load_cpd_features(cfg: dict, root: Path, cpd_lbw: int, cpd_stride: int,
 def build_feature_matrix(panel: pd.DataFrame, cpd_features: pd.DataFrame,
                          cpd_lbw: int) -> pd.DataFrame:
     feature_cols = build_feature_cols(cpd_lbw)
-    momentum_region_cols = [c for c in feature_cols if c in panel.columns]
-    base_cols = ["date", "ticker"] + momentum_region_cols + [TARGET_COL]
+    momentum_cols = [c for c in feature_cols if c in panel.columns]
+    base_cols = ["date", "ticker"] + momentum_cols + [TARGET_COL]
     base = panel[base_cols].copy()
 
     cpd_cols = cpd_feature_cols(cpd_lbw)
@@ -186,43 +155,28 @@ def input_summary(feat: pd.DataFrame, cpd_lbw: int) -> pd.DataFrame:
         {"item": "tickers",    "value": f"{feat['ticker'].nunique():,}"},
         {"item": "date range", "value": f"{feat['date'].min().date()} -> {feat['date'].max().date()}"},
         {"item": "features",   "value": str(len(fcols))},
-        {"item": "model",      "value": "LightGBM L2 + calibration alpha* Sharpe-net (V2)"},
+        {"item": "model",      "value": "LightGBM L2 + calibration alpha* Sharpe-net"},
         {"item": "target",     "value": TARGET_COL},
     ])
 
 
 # --- calibration ---
-#
-# Training: L2/MSE (use_sharpe_loss=False in run_walk_forward). A custom
-# Sharpe objective is available below but disabled -- L2 is more stable on
-# this weak a signal.
-#
-# Calibration: alpha* on validation -- position = sigmoid(alpha x score),
-# alpha* = argmax net Sharpe(25bps) on validation.
+# Training: L2/MSE. Predictions are z-scored cross-sectionally within each
+# date (LightGBM's raw output on daily returns is order 1e-4, far too small
+# for sigmoid(alpha * raw) to produce any position dispersion), then
+# position = sigmoid(alpha* x z), with alpha* = argmax net Sharpe (after EMA
+# + transaction costs) on validation.
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -50.0, 50.0)))
 
 
-def _sharpe_objective_factory(dates_arr: np.ndarray, eps: float = 1e-8):
-    _, inverse, counts = np.unique(dates_arr, return_inverse=True, return_counts=True)
-    T = len(counts)
-    N_d = counts[inverse].astype(np.float64)
-
-    def _obj(y_pred, dataset):
-        y_true = dataset.get_label()
-        R = np.bincount(inverse, weights=y_pred * y_true) / counts
-        mu = R.mean()
-        sigma = R.std() + eps
-        coef = np.sqrt(252) * (
-            1.0 / (T * sigma)
-            - mu * (R - mu) / (max(T - 1, 1) * sigma ** 3)
-        )
-        grad = -coef[inverse] * y_true / N_d
-        hess = np.ones_like(y_pred)
-        return grad, hess
-
-    return _obj
+def _zscore_by_date(scores: np.ndarray, dates: np.ndarray | None) -> np.ndarray:
+    if dates is None:
+        return (scores - scores.mean()) / (scores.std() + 1e-8)
+    df = pd.DataFrame({"date": dates, "score": scores})
+    z = df.groupby("date")["score"].transform(lambda x: (x - x.mean()) / (x.std() + 1e-8))
+    return z.to_numpy()
 
 
 def _raw_sharpe(positions: np.ndarray, returns: np.ndarray) -> float:
@@ -248,12 +202,13 @@ def calibrate_alpha(pred_returns: np.ndarray, y_val: np.ndarray, alpha_max: floa
                     halflife: int, tc: float,
                     dates: np.ndarray | None = None, tickers: np.ndarray | None = None,
                     alphas: np.ndarray | None = None) -> float:
+    scores = _zscore_by_date(pred_returns, dates)
     if alphas is None:
-        alphas = np.logspace(0, np.log10(alpha_max), 30)
+        alphas = np.logspace(-1, np.log10(alpha_max), 40)
     use_net = (dates is not None and tickers is not None)
     best_sr, best_a = -np.inf, 1.0
     for a in alphas:
-        pos = _sigmoid(a * pred_returns)
+        pos = _sigmoid(a * scores)
         sr = (_net_sharpe_calibration(pos, y_val, dates, tickers, halflife, tc)
               if use_net else _raw_sharpe(pos, y_val))
         if sr > best_sr:
@@ -274,18 +229,8 @@ def train_fold_lgb(X_train: np.ndarray, y_train: np.ndarray,
                    X_val: np.ndarray, y_val: np.ndarray,
                    lgb_params: dict, n_estimators: int, seed: int,
                    alpha_max: float, position_halflife: int, transaction_cost: float,
-                   vl_dates: np.ndarray | None = None, vl_tickers: np.ndarray | None = None,
-                   tr_dates: np.ndarray | None = None, use_sharpe_loss: bool = False):
-    use_sharpe = use_sharpe_loss and (tr_dates is not None)
-
-    if use_sharpe:
-        params = {**lgb_params, "random_state": seed,
-                  "objective": _sharpe_objective_factory(tr_dates)}
-        feval = _ic_eval
-    else:
-        params = {**lgb_params, "random_state": seed,
-                  "objective": "regression", "metric": "l2"}
-        feval = None
+                   vl_dates: np.ndarray | None = None, vl_tickers: np.ndarray | None = None):
+    params = {**lgb_params, "random_state": seed, "objective": "regression", "metric": "l2"}
 
     train_set = lgb.Dataset(X_train, label=y_train, free_raw_data=False)
     val_set = lgb.Dataset(X_val, label=y_val, reference=train_set, free_raw_data=False)
@@ -297,7 +242,7 @@ def train_fold_lgb(X_train: np.ndarray, y_train: np.ndarray,
         num_boost_round=n_estimators,
         valid_sets=[train_set, val_set],
         valid_names=["train", "val"],
-        feval=feval,
+        feval=_ic_eval,
         callbacks=callbacks,
     )
 
@@ -382,7 +327,6 @@ def run_walk_forward(feat: pd.DataFrame, feature_cols: list[str], cfg: dict,
                 print(f"  fold {ty} -- too few rows, skipped")
             continue
 
-        tr_slice = tr_feat.iloc[:-n_val]
         vl_slice = tr_feat.iloc[-n_val:]
         model, alpha, _ = train_fold_lgb(
             X_tr, y_tr, X_vl, y_vl,
@@ -392,12 +336,11 @@ def run_walk_forward(feat: pd.DataFrame, feature_cols: list[str], cfg: dict,
             transaction_cost=transaction_cost,
             vl_dates=vl_slice["date"].to_numpy(),
             vl_tickers=vl_slice["ticker"].to_numpy(),
-            tr_dates=tr_slice["date"].to_numpy(),
-            use_sharpe_loss=False,
         )
 
         pred_vl = model.predict(X_vl)
-        p_vl = _sigmoid(alpha * pred_vl)
+        z_vl = _zscore_by_date(pred_vl, vl_slice["date"].to_numpy())
+        p_vl = _sigmoid(alpha * z_vl)
         val_sharpe = _raw_sharpe(p_vl, y_vl)
         val_ic = float(np.corrcoef(pred_vl, y_vl)[0, 1])
 
@@ -410,7 +353,8 @@ def run_walk_forward(feat: pd.DataFrame, feature_cols: list[str], cfg: dict,
 
         X_te = te_feat[feature_cols].fillna(0.0).to_numpy(dtype=np.float64)
         pred_te = model.predict(X_te)
-        raw_pos = _sigmoid(alpha * pred_te)
+        z_te = _zscore_by_date(pred_te, te_feat["date"].to_numpy())
+        raw_pos = _sigmoid(alpha * z_te)
 
         pos_df = te_feat[["date", "ticker"]].copy()
         pos_df["position"] = raw_pos
@@ -429,7 +373,7 @@ def run_walk_forward(feat: pd.DataFrame, feature_cols: list[str], cfg: dict,
 
         if verbose:
             print(f"  fold {ty} | val_sharpe={val_sharpe:.3f} | val_ic={val_ic:.4f} | "
-                  f"alpha={alpha:.0f} | trees={model.num_trees()} | {elapsed:.0f}s")
+                  f"alpha={alpha:.1f} | trees={model.num_trees()} | {elapsed:.0f}s")
 
     positions_df = (pd.concat(all_pos, ignore_index=True) if all_pos
                     else pd.DataFrame(columns=["date", "ticker", "position"]))
@@ -454,11 +398,9 @@ def compute_shap(model: lgb.Booster, feat: pd.DataFrame, feature_cols: list[str]
             .reset_index(drop=True))
 
 
-# --- CPD risk filter ---
-#
-# When the CPD severity score (nu) is high -> a trend break was detected.
-# Positions are pulled back toward 0.5 (neutral) proportionally to nu:
-#   pos_filtered = 0.5 + (1 - strength * nu) * (pos - 0.5)
+# CPD risk filter
+# pos_filtered = 0.5 + (1 - strength * nu) * (pos - 0.5)
+# Pulls positions toward neutral when CPD severity (nu) is high.
 
 def apply_cpd_filter(positions: pd.DataFrame, feat: pd.DataFrame, cpd_lbw: int,
                      strength: float = 1.0) -> pd.DataFrame:
@@ -475,9 +417,8 @@ def apply_cpd_filter(positions: pd.DataFrame, feat: pd.DataFrame, cpd_lbw: int,
     return merged[["date", "ticker", "position"]]
 
 
-# --- EMA smoothing of positions ---
-#
-# LightGBM predicts each day independently -> high day-to-day turnover.
+# EMA smoothing
+# LightGBM predicts each day independently -> noisy day-to-day positions.
 # EMA halflife=10d keeps 93% of yesterday's position + 7% of the new one.
 
 def smooth_positions(positions: pd.DataFrame, halflife: int = 10) -> pd.DataFrame:
@@ -496,8 +437,8 @@ def save_outputs(cfg: dict, root: Path, positions: pd.DataFrame,
                  fold_metrics: pd.DataFrame) -> pd.DataFrame:
     processed_dir = root / cfg["data"]["processed_dir"]
     processed_dir.mkdir(parents=True, exist_ok=True)
-    positions_path = processed_dir / "positions_v2.parquet"
-    fold_metrics_path = processed_dir / "fold_metrics_v2.parquet"
+    positions_path = processed_dir / "positions.parquet"
+    fold_metrics_path = processed_dir / "fold_metrics.parquet"
     positions.to_parquet(positions_path, index=False)
     fold_metrics.to_parquet(fold_metrics_path, index=False)
     return pd.DataFrame([
