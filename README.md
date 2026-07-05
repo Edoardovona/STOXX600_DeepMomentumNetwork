@@ -59,17 +59,17 @@ This repository reproduces that pipeline on European single-stock equities and a
 │   ├── 01_data_loading.ipynb                # Bloomberg → cleaned long-format panel + features + benchmarks
 │   ├── 02_changepoint_detection.ipynb       # 4-method CPD comparison (BinSeg, CUSUM, BOCPD, GP)
 │   ├── 03_deep_momentum_network.ipynb       # single-fold LSTM DMN prototype
+│   ├── 03_train_lgbm.ipynb                  # LightGBM DMN (V2): 16 annual folds, full walk-forward in one run
 │   └── 04_backtest.ipynb                    # walk-forward aggregation, metrics, equity curves, sensitivity
 ├── scripts/
 │   ├── 02_compute_cpd.py                    # precompute GP-CPD features for the full panel (parallelised)
 │   ├── 02bis_compute_cpd_single.py          # precompute GP-CPD features for one ticker (fast iteration/testing)
 │   ├── 03_train_dmn.py                      # train the LSTM DMN on a single walk-forward fold
-│   ├── 03_train_lgbm.py                     # train the LightGBM DMN on a single walk-forward fold
-│   └── 03bis_walk_forward.py                # orchestrator: runs 03_train_{dmn,lgbm}.py across all folds
+│   └── 03bis_walk_forward.py                # orchestrator: runs 03_train_dmn.py (LSTM) across all folds
 └── src/
     ├── cpd.py                  # GP Matérn 3/2 + changepoint kernel, plus BinSeg / CUSUM / BOCPD
     ├── dmn.py                  # LSTM DeepMomentumNetwork + Sharpe-ratio loss (cost-aware variant)
-    ├── lgbm.py                 # LightGBM training, alpha calibration, EMA smoothing, CPD risk filter
+    ├── lgbm.py                 # LightGBM V2: 22 features w/ lag-1, 16 annual folds, alpha calibration, EMA, CPD filter
     ├── sector_mapping.py       # Bloomberg ticker → GICS sector lookup
     └── __init__.py
 ```
@@ -107,16 +107,20 @@ Run in order:
    python scripts/02_compute_cpd.py --lbw 21 --stride 5
    ```
    (Use `scripts/02bis_compute_cpd_single.py --ticker "TTE FP"` for fast iteration on one ticker.)
-5. **Train a model on one fold**, or all folds via the orchestrator:
+5. **Train the LSTM on one fold**, or all folds via the orchestrator:
    ```bash
    # LSTM, paper-style, with CPD
    python scripts/03_train_dmn.py --fold 0 --use-cpd --no-long-only
 
-   # LightGBM, cost-aware, all folds
-   python scripts/03bis_walk_forward.py --model lgbm --use-cpd --tc 0.0025
+   # LSTM, all folds, long-only cost-aware
+   python scripts/03bis_walk_forward.py --use-cpd --long-only --tc 0.0025
    ```
    `notebooks/03_deep_momentum_network.ipynb` is the single-fold, diagnostics-heavy
    prototype version of the same LSTM training loop used by `scripts/03_train_dmn.py`.
+
+   **LightGBM** trains all 16 annual folds in one pass, directly from the notebook
+   (no CLI orchestrator): run `notebooks/03_train_lgbm.ipynb` end to end. It writes
+   `positions_v2.parquet` + `fold_metrics_v2.parquet` to `data/processed/stoxx600/`.
 6. **`notebooks/04_backtest.ipynb`** — concatenates all folds' out-of-sample
    predictions into a continuous track record, applies transaction costs, computes
    the full performance table (Sharpe, Sortino, Calmar, MDD, hit ratio, …) against
@@ -137,10 +141,15 @@ Run in order:
   Binary Segmentation, CUSUM, and BOCPD.
 - **Models**: an LSTM DMN (`src/dmn.py`) trained end-to-end on a Sharpe-ratio loss,
   with an optional cost-aware, "trade-quality-weighted" transaction cost term; and
-  a LightGBM alternative (`src/lgbm.py`) with post-hoc alpha calibration, EMA
-  position smoothing, and a CPD-based risk filter, for a like-for-like comparison.
-- **Validation**: walk-forward, expanding or rolling window (configurable in
-  `configs/default.yaml`), three folds spanning 2011–2025 out-of-sample.
+  a LightGBM alternative (`src/lgbm.py`, V2) with 22 features (momentum + region +
+  CPD, each with a lag-1 twin), post-hoc alpha calibration on net Sharpe, EMA
+  position smoothing, and a CPD-based risk filter. Unlike the LSTM, LightGBM's
+  positions are the raw calibrated `sigmoid(alpha * score)` with no vol-target
+  rescaling.
+- **Validation**: the LSTM uses walk-forward, expanding or rolling window
+  (configurable in `configs/default.yaml`), three folds spanning 2011–2025
+  out-of-sample. LightGBM V2 instead retrains annually on an expanding window,
+  16 folds spanning 2011–2026.
 - **Costs**: 25 bps applied uniformly at the backtest layer to every strategy,
   regardless of whether it was trained cost-aware, so comparisons stay fair.
 
