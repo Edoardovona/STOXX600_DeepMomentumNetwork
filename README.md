@@ -175,8 +175,8 @@ each rescaled to a 15% annualised vol target.
 | DMN LSTM (no CPD) | −15.72% | −1.048 | −88.35% | 43.1% | 1.1 |
 | DMN LSTM w/ CPD | −28.43% | −1.896 | −98.89% | 37.6% | 1.1 |
 | DMN LSTM long-only | +0.85% | +0.056 | −28.67% | 50.5% | 1.6 |
-| DMN LSTM long-only + TC | +3.27% | +0.218 | −35.58% | 51.7% | 2.5 |
-| **LightGBM w/ CPD + TC** | **+4.02%** | **+0.268** | −31.48% | **53.70%** | 1.2 |
+| **DMN LSTM long-only cost-aware** | +3.27% | +0.218 | −35.58% | 51.7% | 2.5 |
+| **LightGBM w/ CPD + TC** | +4.02% | +0.268 | −31.48% | 53.70% | 1.2 |
 | TSMOM (Moskowitz) | −9.30% | −0.620 | −82.28% | 51.1% | — |
 | MACD | −11.92% | −0.795 | −87.16% | 50.8% | — |
 | SXXR (cap-weighted) | +8.46% | +0.564 | −33.45% | 54.2% | — |
@@ -203,7 +203,7 @@ varies significantly across sub-periods.
 
 ### Transaction-cost sensitivity
 
-![Transaction cost sensitivity](documentation/figures/TransactionCostSensitivity.png)
+![Transaction cost sensitivity](documentation/figures/TransactionCostsSensitivity.png)
 
 Sharpe ratio as per-transaction cost increases from 0 to 50 bps. The
 cost-aware-trained strategies degrade far more gracefully than the naive
