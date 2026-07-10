@@ -6,12 +6,19 @@ A Python implementation and extension of:
 > *Slow Momentum with Fast Reversion: A Trading Strategy Using Deep Learning and Changepoint Detection.*
 > The Journal of Financial Data Science, Winter 2022.
 
-Statistical / quantitative research project carried out at ESILV,
-following the scaffold defined in the reference repository
-[`Pergam_MSc_2026`](https://github.com/VNAZZARENO/Pergam_MSc_2026). This branch adapts
-the paper's methodology from its original 50-future universe (1990–2020) to the
-**STOXX 600 equity universe (2006–2026)**, and extends it with a LightGBM baseline,
-a lookback-window sensitivity study, and a cost-aware training objective.
+A quantitative research project adapting the paper's methodology from its
+original 50-future universe (1990–2020) to the **STOXX 600 equity universe
+(2006–2026)**. Beyond the universe change, we extended the original paper
+pipeline in multiple directions — most notably a *LightGBM baseline* and a
+*cost-aware position-quality-based training objective*.
+
+> *Note:* This is a personal fork of a shared MSc
+> project carried out at ESILV in partnership with Pergam, under the
+> supervision of Vincent Nazzareno. The team worked from a common scaffold
+> (project structure, data pipeline conventions) in a shared repository, and
+> each member developed their own implementation branch. This fork preserves
+> my individual branch, originally edoardo/submission in the shared
+> repository: [VNAZZARENO/Pergam_MSc_2026](https://github.com/VNAZZARENO/Pergam_MSc_2026).
 
 ---
 
@@ -45,7 +52,11 @@ This repository reproduces that pipeline on European single-stock equities and a
 ├── configs/
 │   └── default.yaml              # data paths, universe, horizons, DMN/LightGBM/CPD hyperparameters, walk-forward folds
 ├── documentation/
-│   └── paper.pdf                 # Wood, Roberts & Zohren (2022)
+│   ├── Paper.pdf
+│   ├── Slides.pdf          
+│   └── figures/
+│       ├── EquityCurves.png
+|       └── TransactionCostsSensitivity.png                
 ├── data/                          # gitignored except for READMEs / .gitkeep
 │   ├── raw/stoxx600/
 │   │   ├── SXXR.xlsx              # Bloomberg pull: stocks, year_by_year, unique_tickers, benchmark sheets
@@ -152,7 +163,55 @@ Run in order:
 - **Costs**: 25 bps applied uniformly at the backtest layer to every strategy,
   regardless of whether it was trained cost-aware, so comparisons stay fair.
 
-## 7. Known limitations
+
+## 7. Main results
+
+Full out-of-sample track record (2011–2026 for the DMN variants, 2011–2026 for
+LightGBM), net of 25 bps transaction costs applied uniformly to every strategy,
+each rescaled to a 15% annualised vol target.
+
+| Strategy | Return | Sharpe | MDD | Hit % | Avg Holding (d) |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| DMN LSTM (no CPD) | −15.72% | −1.048 | −88.35% | 43.1% | 1.1 |
+| DMN LSTM w/ CPD | −28.43% | −1.896 | −98.89% | 37.6% | 1.1 |
+| DMN LSTM long-only | +0.85% | +0.056 | −28.67% | 50.5% | 1.6 |
+| DMN LSTM long-only + TC | +3.27% | +0.218 | −35.58% | 51.7% | 2.5 |
+| **LightGBM w/ CPD + TC** | **+4.02%** | **+0.268** | −31.48% | **53.70%** | 1.2 |
+| TSMOM (Moskowitz) | −9.30% | −0.620 | −82.28% | 51.1% | — |
+| MACD | −11.92% | −0.795 | −87.16% | 50.8% | — |
+| SXXR (cap-weighted) | +8.46% | +0.564 | −33.45% | 54.2% | — |
+
+The cost-aware objective is what separates the viable strategies from the
+rest: the paper-style DMN (short/long, no cost-awareness) collapses under
+25 bps of costs regardless of whether CPD is included, while restricting to
+long-only and training with the cost-aware objective turns both the LSTM DMN
+and LightGBM into net-positive, positive-Sharpe strategies. LightGBM has the
+best risk-adjusted and hit-ratio numbers among the active strategies tested,
+narrowly ahead of the cost-aware long-only LSTM DMN.
+
+That said, in this table the **passive SXXR benchmark still posts the
+highest Sharpe (0.564) and return (+8.46%) of anything tested** — none of
+the active strategies beat buy-and-hold net of costs over the full period.
+See `notebooks/04_backtest.ipynb` for the regime-dependent breakdown (Sharpe by
+year, rolling Sharpe), where the active strategies' relative performance
+varies significantly across sub-periods.
+
+### Vol-rescaled equity curves
+
+![Vol-rescaled equity curves](documentation/figures/EquityCurves.png)
+
+
+### Transaction-cost sensitivity
+
+![Transaction cost sensitivity](documentation/figures/TransactionCostSensitivity.png)
+
+Sharpe ratio as per-transaction cost increases from 0 to 50 bps. The
+cost-aware-trained strategies degrade far more gracefully than the naive
+DMN, which loses most of its Sharpe within the first few bps — direct
+evidence that the cost-aware training objective, not just long-only
+restriction, is doing real work.
+
+## 8. Known limitations
 
 - STOXX 600 membership is refreshed once a year (Bloomberg's annual
   `year_by_year` snapshot); intra-year (quarterly) index changes are not captured.
@@ -166,13 +225,13 @@ Run in order:
   training window is shorter than the CPD warm-up period); it is only available
   under the rolling-fold structure.
 
-## 8. Tech stack
+## 9. Tech stack
 
 Python 3.11+, `pandas` / `numpy` / `scipy`, `pytorch` (LSTM DMN), `lightgbm`,
 `ruptures` (Binary Segmentation), `arch` (GARCH), `scikit-learn`, `joblib`
 (parallel CPD precompute), `pyyaml`. See `requirements.txt`.
 
-## 9. Reference
+## 10. Reference
 
 Wood, K., Roberts, S., Zohren, S. (2022). *Slow Momentum with Fast Reversion: A
 Trading Strategy Using Deep Learning and Changepoint Detection.* The Journal of
