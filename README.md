@@ -231,8 +231,15 @@ Python 3.11+, `pandas` / `numpy` / `scipy`, `pytorch` (LSTM DMN), `lightgbm`,
 `ruptures` (Binary Segmentation), `arch` (GARCH), `scikit-learn`, `joblib`
 (parallel CPD precompute), `pyyaml`. See `requirements.txt`.
 
-## 10. Reference
+## 10. References
 
 Wood, K., Roberts, S., Zohren, S. (2022). *Slow Momentum with Fast Reversion: A
 Trading Strategy Using Deep Learning and Changepoint Detection.* The Journal of
 Financial Data Science, Winter 2022. See `documentation/paper.pdf`.
+
+Moskowitz, T. J., Ooi, Y. H., & Pedersen, L. H. (2012). *Time series momentum.*
+Journal of financial economics, 104(2), 228-250.
+
+Baz, J., Granger, N., Harvey, C. R., Le Roux, N., & Rattray, S. (2015).
+*Dissecting investment strategies in the cross section and time series.* 
+Available at SSRN: https://ssrn.com/abstract=2695101 or http://dx.doi.org/10.2139/ssrn.2695101
